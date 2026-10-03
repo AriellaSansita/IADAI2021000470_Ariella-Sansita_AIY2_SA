@@ -10,7 +10,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Hospital Inpatient Discharges", page_icon="🏥", layout="wide")
 
-DATA_PATH = "data/hospital_discharges_final.csv"  # put your dataset here (or use the sidebar uploader)
+DATA_PATH = "hospital_discharges_final.csv"  # put your dataset here (or use the sidebar uploader)
 
 # ---------------------------------------------------------------------------
 # 1. DATA LOADING & CLEANING
