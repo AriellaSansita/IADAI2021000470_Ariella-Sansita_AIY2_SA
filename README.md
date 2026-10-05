@@ -10,12 +10,13 @@ analyses inpatient discharge records so administrators, clinicians and operation
 which diagnoses, demographics and facilities drive longer stays and higher charges.
 
 ### Research questions
-1. Which diagnoses are linked to long stays?
+1. Which categories (diagnosis / admission type) are linked to long stays?
 2. Which age groups incur the highest charges?
-3. How does patient severity affect total cost?
+3. How does patient severity affect total cost and stay?
 4. Are there counties with longer average stays?
 5. How do payment types affect the final billing?
 6. Which facilities have the highest utilisation?
+7. How much of the billed amount is actual cost (cost-to-charge ratio)?
 
 Hospital discharge data is widely used for health-system planning and cost analysis. New York's
 SPARCS, the source of this dataset, is an all-payer system that has collected patient-level detail
@@ -71,9 +72,10 @@ streamlit run app.py
 ```
 
 ## Screenshots
-<img width="1468" height="729" alt="Screenshot 2026-10-05 at 3 31 48 PM" src="https://github.com/user-attachments/assets/add76546-2ecf-4159-9d15-79b9f694e7b5" />
-<img width="1466" height="729" alt="Screenshot 2026-10-05 at 3 32 08 PM" src="https://github.com/user-attachments/assets/6bca8e62-26ea-4109-80f3-bf4f48ca9410" />
-<img width="1393" height="619" alt="Screenshot 2026-10-05 at 3 32 35 PM" src="https://github.com/user-attachments/assets/1eca75a2-f31b-4618-8938-7fb482532a31" />
+<img width="1470" height="736" alt="Screenshot 2026-10-05 at 3 45 09 PM" src="https://github.com/user-attachments/assets/8d77ba43-9131-4a7e-a6f1-ae980d081b56" />
+<img width="1470" height="782" alt="Screenshot 2026-10-05 at 3 45 30 PM" src="https://github.com/user-attachments/assets/6c9ec1ef-8eaa-4090-ac22-0ad99beed537" />
+<img width="1392" height="632" alt="Screenshot 2026-10-05 at 3 45 47 PM" src="https://github.com/user-attachments/assets/c521574c-14ab-4d93-bf06-2970b6d60f2e" />
+
 
 ## References
 1. https://healthweb-back.health.ny.gov/statistics/sparcs/
