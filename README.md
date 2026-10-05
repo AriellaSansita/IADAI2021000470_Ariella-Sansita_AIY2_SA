@@ -1,8 +1,8 @@
 # IADAI2021000470_Ariella-Sansita_AIY2_SA
 
-**Hospital Inpatient Discharges Dashboard** - Artificial Intelligence, Mathematics for AI-II (Summative Assessment)
+**Hospital Inpatient Discharges Dashboard**
 
-**Live app:** https://YOUR-APP-NAME.streamlit.app  <!-- paste your Streamlit Cloud link here -->
+**Live app:** https://idai2021000470ariella-sansitaaiy2sa-9w6gtexks3dpxkq44gq4ru.streamlit.app/
 
 ## Project overview
 MediScope Health Analytics works with hospitals to improve patient care and reduce costs. This dashboard
@@ -17,8 +17,16 @@ which diagnoses, demographics and facilities drive longer stays and higher charg
 5. How do payment types affect the final billing?
 6. Which facilities have the highest utilisation?
 
-*(Add 2-3 sentences of external research here, with links, on how hospitals use discharge data for
-planning and cost control.)*
+Hospital discharge data is widely used for health-system planning and cost analysis. New York's
+SPARCS, the source of this dataset, is an all-payer system that has collected patient-level detail
+on diagnoses, treatments, services and charges since 1979. The US federal HCUP databases are
+built on similar discharge records and are used to study healthcare use, access, outcomes and costs,
+which helps policymakers and hospital administrators plan services. Length of stay is a key
+planning measure because shortening stays frees beds for new admissions, but commentary on a
+Journal of the American College of Surgeons study notes that savings from cutting stays depend on
+whether the hospital is capacity-constrained, since the final day of a stay accounts for only
+about 2.4% of total costs. This is why the dashboard compares length of stay and charges across
+diagnoses, severity levels, counties, facilities and payers.*
 
 ## Key features
 - Sidebar filters: county, severity, age group, gender, payment type
@@ -63,5 +71,11 @@ streamlit run app.py
 ```
 
 ## Screenshots
-![Overview](screenshots/overview.png)
-![Charts](screenshots/charts.png)
+<img width="1468" height="729" alt="Screenshot 2026-10-05 at 3 31 48 PM" src="https://github.com/user-attachments/assets/add76546-2ecf-4159-9d15-79b9f694e7b5" />
+<img width="1466" height="729" alt="Screenshot 2026-10-05 at 3 32 08 PM" src="https://github.com/user-attachments/assets/6bca8e62-26ea-4109-80f3-bf4f48ca9410" />
+<img width="1393" height="619" alt="Screenshot 2026-10-05 at 3 32 35 PM" src="https://github.com/user-attachments/assets/1eca75a2-f31b-4618-8938-7fb482532a31" />
+
+## References
+1. https://healthweb-back.health.ny.gov/statistics/sparcs/
+2. https://hcup-us.ahrq.gov/news/exhibit_booth/hcup_fact_sheet.jsp
+3. https://reliasmedia.com/articles/68520-relevance-of-length-of-stay-reductions
