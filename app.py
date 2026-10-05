@@ -2,7 +2,11 @@
 Hospital Inpatient Discharges Dashboard
 MediScope Health Analytics - Streamlit app
 Run locally:  streamlit run app.py
+
+The CSV is read automatically from the repository (same folder as app.py, or ./data/).
 """
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -10,38 +14,70 @@ import streamlit as st
 
 st.set_page_config(page_title="Hospital Inpatient Discharges", page_icon="🏥", layout="wide")
 
-DATA_PATH = "data/hospital_discharges_final.csv"  # put your dataset here (or use the sidebar uploader)
+BASE_DIR = Path(__file__).resolve().parent
 
 # ---------------------------------------------------------------------------
-# 1. DATA LOADING & CLEANING
+# 1. DATA LOCATION - auto-detect the CSV that lives in the repo
 # ---------------------------------------------------------------------------
-# Readable name -> possible raw column names (lower-case). Adjust if your file differs.
+def find_repo_csv() -> Path | None:
+    """Look for the dataset in the repo: preferred names first, then any CSV."""
+    preferred = [
+        BASE_DIR / "data" / "hospital_discharges_final.csv",
+        BASE_DIR / "hospital_discharges_final.csv",
+    ]
+    for p in preferred:
+        if p.exists():
+            return p
+    # Fallback: any csv in repo root or data/ (largest one is most likely the dataset)
+    found = list(BASE_DIR.glob("*.csv")) + list((BASE_DIR / "data").glob("*.csv"))
+    found = [f for f in found if f.name.lower() != "requirements.csv"]
+    return max(found, key=lambda f: f.stat().st_size) if found else None
+
+
+# ---------------------------------------------------------------------------
+# 2. DATA LOADING & CLEANING
+# ---------------------------------------------------------------------------
+# Readable name -> possible raw column names (lower-case, exact match)
 COLUMN_MAP = {
-    "County": ["hospital county", "county"],
+    "County": ["hospital county", "county", "hospital service area"],
     "Facility": ["facility name", "facility", "hospital name"],
-    "Age Group": ["age group"],
+    "Age Group": ["age group", "age_group"],
     "Gender": ["gender", "sex"],
     "Race": ["race"],
-    "Length of Stay": ["length of stay", "los"],
-    "Diagnosis Code": ["ccs diagnosis code", "diagnosis code"],
-    "Diagnosis": ["ccs diagnosis description", "diagnosis description", "diagnosis"],
-    "Severity": ["apr severity of illness description", "severity", "severity of illness"],
+    "Length of Stay": ["length of stay", "length_of_stay", "los"],
+    "Diagnosis Code": ["ccs diagnosis code", "diagnosis code", "diagnosis_code", "apr drg code"],
+    "Diagnosis": ["ccs diagnosis description", "diagnosis description", "diagnosis",
+                  "apr drg description", "apr mdc description", "primary diagnosis"],
+    "Severity": ["apr severity of illness description", "severity", "severity of illness",
+                 "severity of illness description"],
     "Admission Type": ["type of admission", "admission type"],
-    "Payment Type": ["payment typology 1", "payment type", "payment typology"],
-    "Total Charges": ["total charges", "charges"],
-    "Total Costs": ["total costs", "costs"],
-    "Birth Weight": ["birth weight"],
+    "Payment Type": ["payment typology 1", "payment type", "payment typology", "payment_type"],
+    "Total Charges": ["total charges", "charges", "total_charges"],
+    "Total Costs": ["total costs", "costs", "total_costs"],
+    "Birth Weight": ["birth weight", "birth_weight"],
 }
+
+# Last-resort keyword match for the diagnosis column (any column name containing these)
+DIAG_KEYWORDS = ["diagnos", "drg", "ccs", "condition", "disease", "procedure"]
 
 
 def rename_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename raw columns to clear, readable names."""
+    """Rename raw columns to clear, readable names (exact match, then keyword fallback)."""
     lookup = {c.strip().lower(): c for c in df.columns}
     rename = {}
     for new, options in COLUMN_MAP.items():
         for opt in options:
-            if opt in lookup:
+            if opt in lookup and lookup[opt] not in rename:
                 rename[lookup[opt]] = new
+                break
+
+    # Fallback: fuzzy-find a diagnosis column if exact names failed
+    if "Diagnosis" not in rename.values():
+        for raw_col in df.columns:
+            if raw_col in rename:
+                continue
+            if any(k in raw_col.lower() for k in DIAG_KEYWORDS):
+                rename[raw_col] = "Diagnosis"
                 break
     return df.rename(columns=rename)
 
@@ -92,7 +128,6 @@ def clean_data(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         order = ["Minor", "Moderate", "Major", "Extreme"]
         df["Severity"] = pd.Categorical(df["Severity"], categories=order, ordered=True)
     if "Age Group" in df:
-        # sort age groups naturally: '0 To 17', '18 To 29', ... '70 Or Older'
         df["Age Group"] = df["Age Group"].astype("category")
 
     # Diagnosis code -> readable category (the description column already maps it)
@@ -128,27 +163,50 @@ def load_csv(path_or_file) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# 2. SIDEBAR - load data + filters
+# 3. LOAD DATA (repo file by default, optional upload override)
 # ---------------------------------------------------------------------------
 st.title("🏥 Hospital Inpatient Discharges Dashboard")
 st.caption("MediScope Health Analytics | Length of stay, charges, severity and utilisation insights")
 
-uploaded = st.sidebar.file_uploader("Upload dataset (CSV)", type="csv")
-try:
-    raw = load_csv(uploaded) if uploaded else load_csv(DATA_PATH)
-except FileNotFoundError:
-    st.warning(f"Dataset not found at `{DATA_PATH}`. Upload the CSV in the sidebar to begin.")
+with st.sidebar.expander("Data source", expanded=False):
+    uploaded = st.file_uploader("Override with another CSV (optional)", type="csv")
+
+repo_csv = find_repo_csv()
+if uploaded:
+    raw = load_csv(uploaded)
+    st.sidebar.caption("Using uploaded file")
+elif repo_csv:
+    raw = load_csv(repo_csv)
+    st.sidebar.caption(f"Loaded from repo: `{repo_csv.relative_to(BASE_DIR)}`")
+else:
+    st.error("No CSV found in the repository. Add your dataset to the repo root or a `data/` folder "
+             "(e.g. `data/hospital_discharges_final.csv`), or upload one from the sidebar.")
     st.stop()
+
+# If no diagnosis-like column exists in the file, let the user pick one instead of crashing
+if "Diagnosis" not in rename_columns(raw).columns:
+    text_cols = [c for c in raw.columns if raw[c].dtype == "object"]
+    choice = st.sidebar.selectbox(
+        "No diagnosis column detected - choose the column to use as 'Diagnosis'",
+        ["(none)"] + list(raw.columns),
+    )
+    if choice != "(none)":
+        raw = raw.rename(columns={choice: "Diagnosis"})
 
 df, log = clean_data(raw)
 
 REQUIRED = ["Length of Stay", "Total Charges", "Diagnosis", "Severity", "Payment Type"]
 missing = [c for c in REQUIRED if c not in df.columns]
 if missing:
-    st.error(f"Could not find these columns: {missing}. Update `COLUMN_MAP` in app.py to match your file.")
-    st.write("Columns found:", list(df.columns))
+    st.error(f"Could not find these columns: {missing}. Check the original column names below "
+             "or update `COLUMN_MAP` in app.py.")
+    st.write("Original CSV columns:", list(raw.columns))
+    st.write("Columns after cleaning:", list(df.columns))
     st.stop()
 
+# ---------------------------------------------------------------------------
+# 4. SIDEBAR FILTERS
+# ---------------------------------------------------------------------------
 st.sidebar.header("Filters")
 
 
@@ -179,7 +237,7 @@ with st.sidebar.expander("Data cleaning log"):
     st.write(log)
 
 # ---------------------------------------------------------------------------
-# 3. KPIs
+# 5. KPIs
 # ---------------------------------------------------------------------------
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Discharges", f"{len(fdf):,}")
@@ -192,7 +250,7 @@ st.divider()
 tab_viz, tab_eda, tab_data = st.tabs(["📊 Visualisations", "🔎 EDA & insights", "🗂 Data"])
 
 # ---------------------------------------------------------------------------
-# 4. VISUALISATIONS (5 required charts)
+# 6. VISUALISATIONS (5 required charts)
 # ---------------------------------------------------------------------------
 with tab_viz:
     # Chart 1: Bar - avg stay per diagnosis
@@ -202,11 +260,14 @@ with tab_viz:
     diag = (fdf.groupby("Diagnosis")["Length of Stay"].agg(["mean", "count"])
             .query("count >= @min_cases").sort_values("mean", ascending=False).head(top_n)
             .reset_index())
-    fig1 = px.bar(diag.sort_values("mean"), x="mean", y="Diagnosis", orientation="h",
-                  color="mean", color_continuous_scale="Reds", hover_data=["count"],
-                  labels={"mean": "Avg stay (days)", "count": "Cases"})
-    fig1.update_layout(height=max(400, 28 * len(diag)), coloraxis_showscale=False)
-    st.plotly_chart(fig1, use_container_width=True)
+    if diag.empty:
+        st.info("No diagnosis meets the minimum case count - lower the threshold.")
+    else:
+        fig1 = px.bar(diag.sort_values("mean"), x="mean", y="Diagnosis", orientation="h",
+                      color="mean", color_continuous_scale="Reds", hover_data=["count"],
+                      labels={"mean": "Avg stay (days)", "count": "Cases"})
+        fig1.update_layout(height=max(400, 28 * len(diag)), coloraxis_showscale=False)
+        st.plotly_chart(fig1, use_container_width=True)
 
     c1, c2 = st.columns(2)
     # Chart 2: Box plot - charges by severity
@@ -217,7 +278,7 @@ with tab_viz:
         fig2.update_layout(showlegend=False)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # Chart 4: Pie - payment type
+    # Chart 3: Pie - payment type
     with c2:
         st.subheader("3. Patients by payment type")
         pay = fdf["Payment Type"].value_counts().reset_index()
@@ -225,7 +286,7 @@ with tab_viz:
         fig4 = px.pie(pay, names="Payment Type", values="Patients", hole=0.35)
         st.plotly_chart(fig4, use_container_width=True)
 
-    # Chart 3: Heatmap - avg stay by facility and county
+    # Chart 4: Heatmap - avg stay by facility and county
     if {"Facility", "County"} <= set(fdf.columns):
         st.subheader("4. Average stay by facility and county")
         n_fac = st.slider("Top facilities (by discharges)", 5, 30, 15)
@@ -241,14 +302,14 @@ with tab_viz:
 
     # Chart 5: Histogram - length of stay
     st.subheader("5. Distribution of length of stay")
-    cap = int(fdf["Length of Stay"].quantile(0.99))
+    cap = max(int(fdf["Length of Stay"].quantile(0.99)), 1)
     fig5 = px.histogram(fdf[fdf["Length of Stay"] <= cap], x="Length of Stay", nbins=cap,
                         color_discrete_sequence=["#2a9d8f"], marginal="box")
     fig5.update_layout(bargap=0.05, xaxis_title="Length of stay (days, up to 99th percentile)")
     st.plotly_chart(fig5, use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# 5. EDA & INSIGHTS (answers to the research questions)
+# 7. EDA & INSIGHTS
 # ---------------------------------------------------------------------------
 with tab_eda:
     st.subheader("Research questions")
@@ -296,16 +357,16 @@ with tab_eda:
     st.plotly_chart(px.imshow(num.corr().round(2), text_auto=True, color_continuous_scale="RdBu_r",
                               zmin=-1, zmax=1), use_container_width=True)
 
-    # Auto-generated headline insights
     st.subheader("Key insights (update as filters change)")
     top_d = diag.iloc[0] if len(diag) else None
     if top_d is not None:
         st.info(f"Longest average stay: **{top_d['Diagnosis']}** at {top_d['mean']:.1f} days ({int(top_d['count'])} cases).")
-    st.info(f"Average charges rise from ${sev['avg_charges'].iloc[0]:,.0f} ({sev.index[0]}) to "
-            f"${sev['avg_charges'].iloc[-1]:,.0f} ({sev.index[-1]}) across severity levels.")
+    if len(sev):
+        st.info(f"Average charges rise from ${sev['avg_charges'].iloc[0]:,.0f} ({sev.index[0]}) to "
+                f"${sev['avg_charges'].iloc[-1]:,.0f} ({sev.index[-1]}) across severity levels.")
 
 # ---------------------------------------------------------------------------
-# 6. DATA
+# 8. DATA
 # ---------------------------------------------------------------------------
 with tab_data:
     st.dataframe(fdf.head(1000))
