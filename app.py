@@ -131,6 +131,8 @@ def load_and_clean(path: str):
         if col in df:
             df[col] = tidy_text(df[col])
     df["Gender"] = df["Gender"].replace({"M": "Male", "F": "Female", "U": "Unknown"})
+    if "Admission Type" in df:  # "Not Available" is not a real admission type -> treat as missing
+        df["Admission Type"] = df["Admission Type"].replace({"Not Available": np.nan})
 
     before = len(df)
     df = df.dropna(subset=["Severity"])  # severity is central to the analysis
@@ -228,7 +230,8 @@ k1.metric("Discharges", f"{len(fdf):,}")
 k2.metric("Avg length of stay", f"{fdf['Length of Stay'].mean():.1f} days")
 k3.metric("Avg charges", f"${fdf['Total Charges'].mean():,.0f}")
 k4.metric("Avg costs", f"${fdf['Total Costs'].mean():,.0f}" if "Total Costs" in fdf else "n/a")
-k5.metric("Total charges", f"${fdf['Total Charges'].sum() / 1e6:,.1f}M")
+total = fdf["Total Charges"].sum()
+k5.metric("Total charges", f"${total / 1e9:,.2f}B" if total >= 1e9 else f"${total / 1e6:,.1f}M")
 
 st.divider()
 tab_viz, tab_eda, tab_data = st.tabs(["📊 Visualisations", "🔎 EDA & insights", "🗂 Data"])
@@ -267,9 +270,12 @@ with tab_viz:
     with c1:
         st.subheader("2. Total charges by severity")
         box_df = fdf if len(fdf) <= 30000 else fdf.sample(30000, random_state=42)
+        log_y = st.checkbox("Log scale (easier to compare the boxes)", value=False)
         fig2 = px.box(box_df, x="Severity", y="Total Charges", color="Severity",
-                      category_orders={"Severity": SEVERITY_ORDER}, points=False)
+                      category_orders={"Severity": SEVERITY_ORDER}, points="outliers")
         fig2.update_layout(showlegend=False, yaxis_tickprefix="$")
+        if log_y:
+            fig2.update_yaxes(type="log")
         st.plotly_chart(fig2, width="stretch")
         if len(fdf) > 30000:
             st.caption("Box plot drawn from a random sample of 30,000 discharges for speed.")
@@ -281,14 +287,15 @@ with tab_viz:
         pay.columns = ["Payment Type", "Patients"]
         fig3 = px.pie(pay, names="Payment Type", values="Patients", hole=0.35)
         fig3.update_traces(textposition="inside", textinfo="percent")
-        fig3.update_layout(legend=dict(font=dict(size=10)))
+        fig3.update_layout(legend=dict(font=dict(size=10)), uniformtext_minsize=11, uniformtext_mode="hide")
         st.plotly_chart(fig3, width="stretch")
 
     # Chart 4: Heatmap - avg stay by facility and county
     if {"Facility", "County"} <= set(fdf.columns):
         st.subheader("4. Average stay by facility and county")
-        st.caption("Each facility belongs to one county, so rows are labelled **County · Facility** "
-                   "and the columns show how stay changes across another dimension.")
+        st.caption("Facilities sit in a single county, so rows are labelled **County · Facility** (sorted by "
+                   "longest average stay) and the columns show how stay changes across another dimension. "
+                   "Cells with fewer than 20 discharges are left blank because their averages are unreliable.")
         h1, h2 = st.columns(2)
         n_fac = h1.slider("Top facilities (by discharges)", 5, 40, 20)
         col_dim = h2.selectbox("Columns", [c for c in ["Severity", "Admission Type", "Age Group", "Payment Type"]
@@ -298,6 +305,10 @@ with tab_viz:
         hm["County · Facility"] = hm["County"].astype(str) + " · " + hm["Facility"].astype(str)
         pv = hm.pivot_table(index="County · Facility", columns=col_dim, values="Length of Stay",
                             aggfunc="mean", observed=True)
+        n_cases = hm.pivot_table(index="County · Facility", columns=col_dim, values="Length of Stay",
+                                 aggfunc="size", observed=True)
+        pv = pv.where(n_cases >= 20)  # hide unreliable small-sample cells
+        pv = pv.loc[pv.mean(axis=1).sort_values(ascending=False).index]
         fig4 = px.imshow(pv.round(1), aspect="auto", color_continuous_scale="YlOrRd", text_auto=".1f",
                          labels=dict(color="Avg stay (days)"))
         fig4.update_layout(height=max(400, 28 * len(pv)))
@@ -310,10 +321,12 @@ with tab_viz:
               .value_counts().sort_index().reset_index())
     counts.columns = ["Length of Stay", "Discharges"]
     fig5 = px.bar(counts, x="Length of Stay", y="Discharges", color_discrete_sequence=["#2a9d8f"])
-    fig5.add_vline(x=fdf["Length of Stay"].mean(), line_dash="dash", line_color="red",
-                   annotation_text=f"Mean {fdf['Length of Stay'].mean():.1f}")
-    fig5.add_vline(x=fdf["Length of Stay"].median(), line_dash="dot", line_color="black",
-                   annotation_text=f"Median {fdf['Length of Stay'].median():.0f}", annotation_position="bottom right")
+    fig5.add_vline(x=fdf["Length of Stay"].mean(), line_dash="dash", line_color="#ef476f", line_width=2,
+                   annotation_text=f"Mean {fdf['Length of Stay'].mean():.1f}", annotation_position="top right",
+                   annotation_font_color="#ef476f")
+    fig5.add_vline(x=fdf["Length of Stay"].median(), line_dash="dot", line_color="#ffb703", line_width=2,
+                   annotation_text=f"Median {fdf['Length of Stay'].median():.0f}", annotation_position="top left",
+                   annotation_font_color="#ffb703")
     fig5.update_layout(bargap=0.05, xaxis_title="Length of stay (days, up to 99th percentile)")
     st.plotly_chart(fig5, width="stretch")
 
@@ -332,13 +345,36 @@ with tab_eda:
 7. How much of the billed amount is actual cost (cost-to-charge ratio)?
 """)
 
+    with st.expander("Background & sources"):
+        st.markdown("""
+**Dataset.** Hospital inpatient discharge records (county, facility, demographics, severity, stay,
+charges and costs). The counties and facilities are New York State, in the style of the state's SPARCS
+discharge data.
+
+**Why these measures matter to administrators.**
+- *Length of stay* drives bed capacity and staffing; long stays are the main lever for efficiency.
+- *Charges vs. costs* differ: charges are the billed amount, costs are what the hospital spends, so the
+  **cost-to-charge ratio** shows how much of a bill reflects real resource use.
+- *Severity of illness* (Minor to Extreme) explains much of the variation in stay and cost, so it is
+  used to compare like with like.
+- *Payer mix* (Medicare, Medicaid, private) shapes revenue and billing patterns.
+
+**Engineered fields.** `Charge per Day` = charges / stay, `Stay Category` = stay bands,
+`Cost-to-Charge Ratio` = costs / charges.
+
+**References.** Streamlit, *Improving healthcare management with Streamlit*
+(blog.streamlit.io/improving-healthcare-management-with-streamlit) and the Plotly Express documentation
+(plotly.com/python/plotly-express).
+""")
+
     # Q1
     st.markdown(f"**Q1 - Stay by {group_col.lower()} and severity (pivot table)**")
     if g1 is not None and len(g1):
         pv1 = fdf.pivot_table(index=group_col, columns="Severity", values="Length of Stay",
                               aggfunc="mean", observed=True).round(1)
         pv1["Overall"] = fdf.groupby(group_col, observed=True)["Length of Stay"].mean().round(1)
-        st.dataframe(pv1.sort_values("Overall", ascending=False).head(15), width="stretch")
+        st.dataframe(pv1.sort_values("Overall", ascending=False).head(15).style.format("{:.1f}", na_rep="-"),
+                     width="stretch")
 
     # Q2
     st.markdown("**Q2 - Charges by age group and gender**")
@@ -348,42 +384,61 @@ with tab_eda:
     figa.update_layout(coloraxis_showscale=False)
     st.plotly_chart(figa, width="stretch")
     if "Gender" in fdf:
-        st.dataframe(fdf.pivot_table(index="Age Group", columns="Gender", values="Total Charges",
-                                     aggfunc="mean", observed=True).round(0), width="stretch")
+        n_unk = int((fdf["Gender"] == "Unknown").sum())
+        if n_unk:
+            st.caption(f"Average charges by age group and gender. The {n_unk} records with unknown gender are "
+                       "excluded because they are too few to give a meaningful average.")
+        known = fdf[fdf["Gender"].isin(["Female", "Male"])]
+        st.dataframe(known.pivot_table(index="Age Group", columns="Gender", values="Total Charges",
+                                       aggfunc="mean", observed=True).style.format("${:,.0f}", na_rep="-"),
+                     width="stretch")
 
     # Q3
     st.markdown("**Q3 - Severity vs. stay and cost**")
     sev = fdf.groupby("Severity", observed=True).agg(
         avg_stay=("Length of Stay", "mean"), avg_charges=("Total Charges", "mean"),
         median_charges=("Total Charges", "median"), cases=("Length of Stay", "size")).round(1)
-    st.dataframe(sev, width="stretch")
+    st.dataframe(
+        sev.rename(columns={"avg_stay": "Avg stay (days)", "avg_charges": "Avg charges",
+                            "median_charges": "Median charges", "cases": "Discharges"})
+        .style.format({"Avg stay (days)": "{:.1f}", "Avg charges": "${:,.0f}",
+                       "Median charges": "${:,.0f}", "Discharges": "{:,.0f}"}),
+        width="stretch")
 
     # Q4
     if "County" in fdf:
         st.markdown("**Q4 - Counties with the longest average stay (min. 50 cases)**")
         cty = (fdf.groupby("County")["Length of Stay"].agg(["mean", "count"])
                .query("count >= 50").sort_values("mean", ascending=False).head(10).round(2))
-        st.dataframe(cty, width="stretch")
+        st.dataframe(cty.rename(columns={"mean": "Avg stay (days)", "count": "Discharges"})
+                     .style.format({"Avg stay (days)": "{:.2f}", "Discharges": "{:,.0f}"}), width="stretch")
 
     # Q5
     st.markdown("**Q5 - Payment type vs. billing**")
     pay_tbl = fdf.groupby("Payment Type")["Total Charges"].agg(["mean", "median", "count"]).round(0) \
         .sort_values("mean", ascending=False)
-    st.dataframe(pay_tbl, width="stretch")
+    st.dataframe(pay_tbl.rename(columns={"mean": "Avg charges", "median": "Median charges", "count": "Discharges"})
+                 .style.format({"Avg charges": "${:,.0f}", "Median charges": "${:,.0f}", "Discharges": "{:,.0f}"}),
+                 width="stretch")
     if "County" in fdf:
         st.markdown("Average charges by county and payment type (pivot table, top 15 counties)")
         top_c = fdf["County"].value_counts().head(15).index
-        pv5 = fdf[fdf["County"].isin(top_c)].pivot_table(index="County", columns="Payment Type",
-                                                         values="Total Charges", aggfunc="mean").round(0)
-        st.plotly_chart(px.imshow(pv5, aspect="auto", color_continuous_scale="Blues",
-                                  labels=dict(color="Avg charges ($)")), width="stretch")
+        sub = fdf[fdf["County"].isin(top_c)]
+        pv5 = sub.pivot_table(index="County", columns="Payment Type", values="Total Charges", aggfunc="mean")
+        n5 = sub.pivot_table(index="County", columns="Payment Type", values="Total Charges", aggfunc="size")
+        pv5 = (pv5.where(n5 >= 20) / 1000).round(0)  # blank out cells with <20 discharges
+        fig_pc = px.imshow(pv5, aspect="auto", color_continuous_scale="Blues", text_auto=".0f",
+                           labels=dict(color="Avg charges ($k)"))
+        fig_pc.update_layout(plot_bgcolor="#7a7f87", height=520)
+        st.plotly_chart(fig_pc, width="stretch")
+        st.caption("Values in thousands of dollars. Grey cells have fewer than 20 discharges, so no average is shown.")
 
     # Q6
     if "Facility" in fdf:
         st.markdown("**Q6 - Top 10 high-utilisation facilities**")
         fac = fdf["Facility"].value_counts().head(10).rename("Discharges").reset_index()
         figf = px.bar(fac.sort_values("Discharges"), x="Discharges", y="Facility", orientation="h",
-                      color_discrete_sequence=["#264653"])
+                      color_discrete_sequence=["#4cc9f0"])
         figf.update_layout(height=420)
         st.plotly_chart(figf, width="stretch")
 
@@ -392,13 +447,17 @@ with tab_eda:
         st.markdown("**Q7 - Cost-to-charge ratio by payment type**")
         ratio = fdf.groupby("Payment Type")["Cost-to-Charge Ratio"].median().round(3) \
             .sort_values().rename("Median cost / charge").reset_index()
-        st.plotly_chart(px.bar(ratio, x="Payment Type", y="Median cost / charge",
+        st.plotly_chart(px.bar(ratio, x="Payment Type", y="Median cost / charge", text_auto=".2f",
                                color_discrete_sequence=["#e76f51"]), width="stretch")
 
     st.markdown("**Correlation (numeric fields)**")
     num = fdf.select_dtypes("number")
     st.plotly_chart(px.imshow(num.corr().round(2), text_auto=True, color_continuous_scale="RdBu_r",
                               zmin=-1, zmax=1), width="stretch")
+    cm = num.corr()
+    st.caption(f"Longer stays go with higher charges (r = {cm.loc['Length of Stay', 'Total Charges']:.2f}) and "
+               f"higher costs (r = {cm.loc['Length of Stay', 'Total Costs']:.2f}); charges and costs move closely "
+               f"together (r = {cm.loc['Total Charges', 'Total Costs']:.2f}).")
 
     # Auto-generated insights (update with the filters)
     st.subheader("Key insights (update as filters change)")
@@ -407,13 +466,13 @@ with tab_eda:
         st.info(f"Longest average stay by {group_col.lower()}: **{t[group_col]}** at "
                 f"{t['mean']:.1f} days ({int(t['count']):,} cases).")
     top_age = age.sort_values("mean", ascending=False).iloc[0]
-    st.info(f"Highest average charges by age group: **{top_age['Age Group']}** at ${top_age['mean']:,.0f}.")
+    st.info(f"Highest average charges by age group: **{top_age['Age Group']}** at \\${top_age['mean']:,.0f}.")
     if len(sev) > 1:
         lo, hi = sev["avg_charges"].iloc[0], sev["avg_charges"].iloc[-1]
-        st.info(f"Average charges rise from ${lo:,.0f} ({sev.index[0]}) to ${hi:,.0f} ({sev.index[-1]}) "
+        st.info(f"Average charges rise from \\${lo:,.0f} ({sev.index[0]}) to \\${hi:,.0f} ({sev.index[-1]}) "
                 f"across severity levels - about {hi / lo:.1f}x.")
     top_pay = pay_tbl.index[0]
-    st.info(f"Payment type with the highest average charges: **{top_pay}** (${pay_tbl['mean'].iloc[0]:,.0f}).")
+    st.info(f"Payment type with the highest average charges: **{top_pay}** (\\${pay_tbl['mean'].iloc[0]:,.0f}).")
 
 # ---------------------------------------------------------------------------
 # 8. DATA
