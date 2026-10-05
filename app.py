@@ -168,19 +168,13 @@ def load_csv(path_or_file) -> pd.DataFrame:
 st.title("🏥 Hospital Inpatient Discharges Dashboard")
 st.caption("MediScope Health Analytics | Length of stay, charges, severity and utilisation insights")
 
-with st.sidebar.expander("Data source", expanded=False):
-    uploaded = st.file_uploader("Override with another CSV (optional)", type="csv")
-
 repo_csv = find_repo_csv()
-if uploaded:
-    raw = load_csv(uploaded)
-    st.sidebar.caption("Using uploaded file")
-elif repo_csv:
+if repo_csv:
     raw = load_csv(repo_csv)
-    st.sidebar.caption(f"Loaded from repo: `{repo_csv.relative_to(BASE_DIR)}`")
+    st.sidebar.caption(f"Data: `{repo_csv.relative_to(BASE_DIR)}`")
 else:
-    st.error("No CSV found in the repository. Add your dataset to the repo root or a `data/` folder "
-             "(e.g. `data/hospital_discharges_final.csv`), or upload one from the sidebar.")
+    st.error("No CSV found in the repository. Add `hospital_discharges_final.csv` to the repo root "
+             "or a `data/` folder and redeploy.")
     st.stop()
 
 # If no diagnosis-like column exists in the file, let the user pick one instead of crashing
