@@ -191,7 +191,6 @@ HAS_DIAG = "Diagnosis" in df.columns
 # ---------------------------------------------------------------------------
 # 4. SIDEBAR FILTERS
 # ---------------------------------------------------------------------------
-st.sidebar.caption(f"Data: `{csv_path.relative_to(BASE_DIR)}`")
 st.sidebar.header("Filters")
 
 
@@ -220,8 +219,6 @@ if fdf.empty:
     st.stop()
 
 st.sidebar.caption(f"Showing {len(fdf):,} of {len(df):,} discharges")
-with st.sidebar.expander("Data cleaning log"):
-    st.write(log)
 
 # ---------------------------------------------------------------------------
 # 5. KPIs
