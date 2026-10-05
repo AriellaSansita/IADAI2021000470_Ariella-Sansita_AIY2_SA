@@ -4,7 +4,7 @@
 
 # CRS Name: Artificial Intelligence
 
-# Course Name - Machine Learning & Deep Learning
+# Course Name - Mathematics for AI-II
 
 # School name - Birla Open Minds International School, Kollur
 
