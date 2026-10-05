@@ -195,7 +195,7 @@ if "Diagnosis" not in rename_columns(raw).columns:
 
 df, log = clean_data(raw)
 
-REQUIRED = ["Length of Stay", "Total Charges", "Diagnosis", "Severity", "Payment Type"]
+REQUIRED = ["Length of Stay", "Total Charges", "Severity", "Payment Type"]
 missing = [c for c in REQUIRED if c not in df.columns]
 if missing:
     st.error(f"Could not find these columns: {missing}. Check the original column names below "
@@ -253,19 +253,30 @@ tab_viz, tab_eda, tab_data = st.tabs(["📊 Visualisations", "🔎 EDA & insight
 # 6. VISUALISATIONS (5 required charts)
 # ---------------------------------------------------------------------------
 with tab_viz:
-    # Chart 1: Bar - avg stay per diagnosis
-    st.subheader("1. Average hospital stay per diagnosis")
-    top_n = st.slider("Number of diagnoses", 5, 30, 15)
-    min_cases = st.number_input("Minimum cases per diagnosis", 1, 1000, 30)
-    diag = (fdf.groupby("Diagnosis")["Length of Stay"].agg(["mean", "count"])
-            .query("count >= @min_cases").sort_values("mean", ascending=False).head(top_n)
-            .reset_index())
-    if diag.empty:
-        st.info("No diagnosis meets the minimum case count - lower the threshold.")
+    # Chart 1: Bar - avg stay per diagnosis (falls back to another category if the file has no diagnosis column)
+    if "Diagnosis" in fdf.columns:
+        group_col, group_label = "Diagnosis", "diagnosis"
     else:
-        fig1 = px.bar(diag.sort_values("mean"), x="mean", y="Diagnosis", orientation="h",
+        st.warning("This dataset has no diagnosis column, so chart 1 groups by another category. "
+                   "Use the original dataset (with a diagnosis / CCS description column) for diagnosis-level results.")
+        options = [c for c in ["Admission Type", "Age Group", "Severity", "Payment Type", "County", "Facility"]
+                   if c in fdf.columns]
+        group_col = st.selectbox("Group average stay by", options)
+        group_label = group_col.lower()
+
+    st.subheader(f"1. Average hospital stay per {group_label}")
+    top_n = st.slider("Number of groups", 3, 30, 15)
+    min_cases = st.number_input("Minimum cases per group", 1, 1000, 30)
+    diag = (fdf.groupby(group_col, observed=True)["Length of Stay"].agg(["mean", "count"])
+            .query("count >= @min_cases").sort_values("mean", ascending=False).head(top_n)
+            .reset_index().rename(columns={group_col: "Group"}))
+    if diag.empty:
+        st.info("No group meets the minimum case count - lower the threshold.")
+    else:
+        diag["Group"] = diag["Group"].astype(str)
+        fig1 = px.bar(diag.sort_values("mean"), x="mean", y="Group", orientation="h",
                       color="mean", color_continuous_scale="Reds", hover_data=["count"],
-                      labels={"mean": "Avg stay (days)", "count": "Cases"})
+                      labels={"mean": "Avg stay (days)", "count": "Cases", "Group": group_col})
         fig1.update_layout(height=max(400, 28 * len(diag)), coloraxis_showscale=False)
         st.plotly_chart(fig1, use_container_width=True)
 
@@ -360,7 +371,7 @@ with tab_eda:
     st.subheader("Key insights (update as filters change)")
     top_d = diag.iloc[0] if len(diag) else None
     if top_d is not None:
-        st.info(f"Longest average stay: **{top_d['Diagnosis']}** at {top_d['mean']:.1f} days ({int(top_d['count'])} cases).")
+        st.info(f"Longest average stay by {group_label}: **{top_d['Group']}** at {top_d['mean']:.1f} days ({int(top_d['count'])} cases).")
     if len(sev):
         st.info(f"Average charges rise from ${sev['avg_charges'].iloc[0]:,.0f} ({sev.index[0]}) to "
                 f"${sev['avg_charges'].iloc[-1]:,.0f} ({sev.index[-1]}) across severity levels.")
