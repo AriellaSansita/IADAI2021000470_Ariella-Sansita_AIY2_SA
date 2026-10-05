@@ -1,6 +1,16 @@
-# IADAI2021000470_Ariella-Sansita_AIY2_SA
+# Candidate Name - Ariella Sansita M
 
-**Hospital Inpatient Discharges Dashboard**
+# Candidate Registration Number - 1000470
+
+# CRS Name: Artificial Intelligence
+
+# Course Name - Machine Learning & Deep Learning
+
+# School name - Birla Open Minds International School, Kollur
+
+# Summative Assessment
+
+# Hospital Inpatient Discharges Dashboard
 
 **Live app:** https://idai2021000470ariella-sansitaaiy2sa-9w6gtexks3dpxkq44gq4ru.streamlit.app/
 
