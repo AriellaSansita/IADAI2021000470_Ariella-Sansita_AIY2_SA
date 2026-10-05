@@ -12,8 +12,6 @@
 
 # Hospital Inpatient Discharges Dashboard
 
-**Live app:** https://idai2021000470ariella-sansitaaiy2sa-9w6gtexks3dpxkq44gq4ru.streamlit.app/
-
 ## Project overview
 MediScope Health Analytics works with hospitals to improve patient care and reduce costs. This dashboard
 analyses inpatient discharge records so administrators, clinicians and operations managers can see
@@ -104,6 +102,7 @@ Run locally:
 pip install -r requirements.txt
 streamlit run app.py
 ```
+**Live app:** https://idai2021000470ariella-sansitaaiy2sa-9w6gtexks3dpxkq44gq4ru.streamlit.app/
 
 ## Screenshots
 <img width="1470" height="736" alt="Screenshot 2026-10-05 at 3 45 09 PM" src="https://github.com/user-attachments/assets/8d77ba43-9131-4a7e-a6f1-ae980d081b56" />
