@@ -25,14 +25,27 @@ STAY_ORDER = ["Short (1-3d)", "Medium (4-7d)", "Long (8-14d)", "Very long (15d+)
 # ---------------------------------------------------------------------------
 # 1. DATA LOCATION
 # ---------------------------------------------------------------------------
+def is_valid_csv(p: Path) -> bool:
+    """A usable CSV is non-empty and not a Git LFS pointer stub."""
+    try:
+        if not p.is_file() or p.stat().st_size < 200:
+            return False
+        with open(p, "rb") as f:
+            return not f.read(60).startswith(b"version https://git-lfs")
+    except OSError:
+        return False
+
+
 def find_repo_csv():
-    """Locate the dataset inside the repo."""
-    for p in [BASE_DIR / "data" / "hospital_discharges_final.csv",
-              BASE_DIR / "hospital_discharges_final.csv"]:
-        if p.exists():
+    """Locate the dataset inside the repo, skipping empty / placeholder files."""
+    preferred = [BASE_DIR / "data" / "hospital_discharges_final.csv",
+                 BASE_DIR / "hospital_discharges_final.csv"]
+    for p in preferred:
+        if is_valid_csv(p):
             return p
-    found = list(BASE_DIR.glob("*.csv")) + list((BASE_DIR / "data").glob("*.csv"))
-    return max(found, key=lambda f: f.stat().st_size) if found else None
+    others = [f for f in list(BASE_DIR.glob("*.csv")) + list((BASE_DIR / "data").glob("*.csv"))
+              if is_valid_csv(f)]
+    return max(others, key=lambda f: f.stat().st_size) if others else None
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +188,8 @@ st.caption("MediScope Health Analytics | Length of stay, charges, severity and u
 
 csv_path = find_repo_csv()
 if csv_path is None:
-    st.error("No CSV found in the repository. Add `hospital_discharges_final.csv` to the repo root "
-             "or a `data/` folder and redeploy.")
+    st.error("No usable CSV found in the repository. `hospital_discharges_final.csv` must be in the repo "
+             "root or a `data/` folder, and must not be empty (re-upload it on GitHub if its size shows 0 bytes).")
     st.stop()
 
 df, log = load_and_clean(str(csv_path))
